@@ -3,18 +3,20 @@ import operations
 import os
 import sys
 import threading
-import logging
-
-logging.basicConfig(filename='./logging/backend_server.log', level=logging.INFO)
-
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 import config_service_client
 from cloudAMQP_client import CloudAMQPClient
 
+# prepare logging
+import logging
+logging.basicConfig(filename='./logging/backend_server.log', level=logging.INFO)
+
+# ask server configs
 server_config = config_service_client.getServerConfigForServer('backend_server')
 server_host = server_config['url']
 server_port = int(server_config['port'])
 
+# ask mq configs
 mq_config = config_service_client.getMessagequeueConfigForUsecase('log_clicks_task')
 cloudAMQP_client = CloudAMQPClient(mq_config['queue_url'], mq_config['queue_name'])
 
@@ -38,14 +40,7 @@ http_server = pyjsonrpc.ThreadingHttpServer(
 print "Starting HTTP server on %s:%d" % (server_host, server_port)
 logging.info('starting backend server on %s:%d' % (server_host, server_port))
 
-# TODO: add the sleep time in secs to server configs after, instead of hard coding here
-def heartbeat():
-    while True:
-        if cloudAMQP_client is not None:
-            print 'sleeping'
-            cloudAMQP_client.sleep(1)
-
-#t = threading.Thread(target=heartbeat)
-#t.start()
-
 http_server.serve_forever()
+
+# WARNING: ISSUE with cloudAMQP client timeout: have to keep this cloud client heartbeating somewhere
+# or the task msg send stops working after some time

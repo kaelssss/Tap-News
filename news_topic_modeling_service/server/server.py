@@ -7,33 +7,34 @@ import pyjsonrpc
 import sys
 import tensorflow as tf
 import time
-import logging
-
 from tensorflow.contrib.learn.python.learn.estimators import model_fn
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-# import packages in trainer and common
+# prepare logging
+import logging
+logging.basicConfig(filename='../logging/news_topic_modeling_server.log', level=logging.INFO)
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'trainer'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 import config_service_client
 import news_cnn_model
 
-logging.basicConfig(filename='../logging/news_topic_modeling_server.log', level=logging.INFO)
-
 learn = tf.contrib.learn
 
+# ask for server configs
 server_config = config_service_client.getServerConfigForServer('news_topic_modeling_server')
 server_host = server_config['url']
 server_port = int(server_config['port'])
 
-# dir related params are still hard coded here
+# Note: dir related params are still hard coded here
 MODEL_DIR = '../model'
 MODEL_UPDATE_LAG_IN_SECONDS = 60
 VARS_FILE = '../model/vars'
 VOCAB_PROCESSOR_SAVE_FILE = '../model/vocab_procesor_save_file'
 DATA_FILE = '../training_data/labeled_news_v3.csv'
 
+# ask for learning params
 learning_param = config_service_client.getMachineLearningParamForUsecase('topic_modeling')
 number_classes = int(learning_param['number_classes'])
 testing_index_end = int(learning_param['testing_index_end'])
@@ -95,6 +96,7 @@ class RequestHandler(pyjsonrpc.HttpRequestHandler):
             p['class'] for p in classifier.predict(
                 predict_x, as_iterable=True)
         ]
+        # y_predicted is a list with only one class index in it
         print y_predicted
         topic = news_classes_v2.class_map[str(y_predicted[0])]
         return topic

@@ -7,16 +7,14 @@ import sys
 import numpy
 from bson.json_util import dumps
 from datetime import datetime
-
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 import config_service_client
 import mongodb_client
 import news_recommendation_service_client
-
 import news_classes_v2
-
 from cloudAMQP_client import CloudAMQPClient
 
+# asking for redis, db, mq configs
 redis_config = config_service_client.getMemoryConfig('redis')
 redis_client = redis.StrictRedis(redis_config['host'], redis_config['port'], db=0)
 
@@ -26,6 +24,7 @@ news_table_name = db_config['database_name']
 mq_config = config_service_client.getMessagequeueConfigForUsecase('log_clicks_task')
 cloudAMQP_client = CloudAMQPClient(mq_config['queue_url'], mq_config['queue_name'])
 
+# asking for news memory-caching and db-fetching configs
 backend_config = config_service_client.getBackendConfigForUsecase('pagination')
 news_limit = int(backend_config['user_news_memory_limit'])
 news_list_batch_size = int(backend_config['news_page_size'])
@@ -39,7 +38,7 @@ def getNewsSummariesForUser(user_id, page_num):
     # The final list of news to be returned.
     sliced_news = []
 
-    # personalizing
+    # personalizing: decide each class's number
     preferences = news_recommendation_service_client.getPreferenceForUser(user_id)
     news_numbers = []
     if preferences is not None and len(preferences) > 0:
@@ -61,7 +60,7 @@ def getNewsSummariesForUser(user_id, page_num):
     else:
         db = mongodb_client.get_db()
         print 'taking from db'
-        #total_news = list(db[news_table_name].find().sort([('publishedAt', -1)]).limit(news_limit))
+        # according to each class's number, take each class's amount of news, and sort them back together
         selected_news = []
         for i in range(0, len(news_numbers)):
             selected_news.extend(list(db[news_table_name].find({
@@ -69,21 +68,21 @@ def getNewsSummariesForUser(user_id, page_num):
             }).limit(news_numbers[i])))
         selected_news = sorted(selected_news, key=lambda k: k['publishedAt'], reverse=True)[:]
         
+        # caching digests and paging
         selected_news_digests = map(lambda x:x['digest'], selected_news)
         redis_client.set(user_id, pickle.dumps(selected_news_digests))
         redis_client.expire(user_id, user_news_time_out_in_seconds)
         sliced_news = selected_news[begin_index:end_index]
 
-    # tagging
+    # other taggings and returning
     for news in sliced_news:
         del news['text']
-        #if news['class'] == topPreference:
-            #news['reason'] = 'Recommend'
         if news['publishedAt'].date() == datetime.today().date():
             news['time'] = 'today'
     return json.loads(dumps(sliced_news))
 
 def logNewsClickForUser(user_id, news_id, rate):
+    # form click message and send to queue
     message = {
         'userId': user_id,
         'newsId': news_id,
